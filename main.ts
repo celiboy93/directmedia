@@ -1,95 +1,80 @@
 import { DOMParser } from "https://deno.land/x/deno_dom/deno-dom-wasm.ts";
 
+// Initialize Deno KV Database for Caching
+const kv = await Deno.openKv();
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const path = url.pathname;
 
-  // =================================================================
-  // 1. Frontend UI (Generator with Copy Buttons)
-  // =================================================================
+  // 1. Frontend UI
   if (path === "/" || path === "") {
     const html = `
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Secure Link Generator</title>
+        <title>Turbo Link Generator</title>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #121212; color: #e0e0e0; margin: 0; }
-          .card { background: #1e1e1e; padding: 30px; border-radius: 12px; width: 100%; max-width: 600px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #333; }
-          h2 { color: #bb86fc; margin-top: 0; }
-          p { color: #b0b0b0; font-size: 14px; margin-bottom: 25px; }
+          body { font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #0f0f0f; color: #f0f0f0; margin: 0; }
+          .card { background: #1a1a1a; padding: 30px; border-radius: 16px; width: 100%; max-width: 550px; text-align: center; box-shadow: 0 15px 40px rgba(0,0,0,0.6); border: 1px solid #333; }
+          h2 { color: #00d2d3; margin-top: 0; font-weight: 800; }
+          p { color: #888; font-size: 14px; margin-bottom: 25px; }
+          input[type="url"] { width: 100%; padding: 14px; margin-bottom: 15px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 8px; box-sizing: border-box; outline: none; transition: 0.3s; }
+          input[type="url"]:focus { border-color: #00d2d3; background: #333; }
+          button.gen-btn { width: 100%; padding: 14px; background: #00d2d3; color: black; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.2s; }
+          button.gen-btn:hover { background: #01a3a4; }
           
-          input[type="url"] { width: 100%; padding: 14px; margin-bottom: 15px; background: #2c2c2c; border: 1px solid #444; color: white; border-radius: 6px; box-sizing: border-box; outline: none; }
-          input[type="url"]:focus { border-color: #bb86fc; }
-          
-          button.generate-btn { width: 100%; padding: 14px; background: #bb86fc; color: black; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; transition: 0.2s; }
-          button.generate-btn:hover { background: #9955e8; }
-
-          /* Result Section */
           #resultArea { display: none; margin-top: 30px; text-align: left; border-top: 1px solid #333; padding-top: 20px; }
-          .label { font-size: 12px; color: #03dac6; margin-bottom: 5px; font-weight: bold; letter-spacing: 0.5px; }
-          
+          .label { font-size: 11px; color: #00d2d3; margin-bottom: 6px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
           .copy-group { display: flex; gap: 10px; margin-bottom: 20px; }
-          .result-input { flex-grow: 1; background: #121212; border: 1px solid #333; color: #aaa; padding: 10px; border-radius: 4px; font-size: 13px; }
-          .copy-btn { background: #333; color: white; border: 1px solid #444; padding: 0 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-          .copy-btn:hover { background: #444; }
-          .copy-btn:active { background: #03dac6; color: black; }
+          .res-input { flex-grow: 1; background: #000; border: 1px solid #333; color: #ccc; padding: 10px; border-radius: 6px; font-size: 12px; font-family: monospace; }
+          .copy-btn { background: #333; color: white; border: 1px solid #444; padding: 0 18px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+          .copy-btn:hover { background: #555; }
         </style>
       </head>
       <body>
         <div class="card">
-          <h2>🔒 Secure Link Generator</h2>
-          <p>Obfuscate MediaFire Links for Streaming & Downloading</p>
-          
+          <h2>⚡ Turbo Generator</h2>
+          <p>Fast Streaming with Smart Caching</p>
           <form id="form">
             <input type="url" id="mfUrl" placeholder="https://www.mediafire.com/file/..." required />
-            <button type="submit" class="generate-btn">Generate Secured Links</button>
+            <button type="submit" class="gen-btn">Generate Links</button>
           </form>
-
           <div id="resultArea">
-            
-            <div class="label">🎬 STREAMING LINK (For Player/APK)</div>
+            <div class="label">Video Stream Link (Player)</div>
             <div class="copy-group">
-              <input type="text" class="result-input" id="streamLink" readonly />
-              <button class="copy-btn" onclick="copyToClipboard('streamLink')">Copy</button>
+              <input type="text" class="res-input" id="streamLink" readonly />
+              <button class="copy-btn" onclick="copy('streamLink')">Copy</button>
             </div>
-
-            <div class="label">⬇️ DIRECT DOWNLOAD LINK (Auto-Download)</div>
+            <div class="label">Direct Download Link</div>
             <div class="copy-group">
-              <input type="text" class="result-input" id="dlLink" readonly />
-              <button class="copy-btn" onclick="copyToClipboard('dlLink')">Copy</button>
+              <input type="text" class="res-input" id="dlLink" readonly />
+              <button class="copy-btn" onclick="copy('dlLink')">Copy</button>
             </div>
-
           </div>
         </div>
-
         <script>
           const form = document.getElementById('form');
           const resultArea = document.getElementById('resultArea');
-          const streamInput = document.getElementById('streamLink');
-          const dlInput = document.getElementById('dlLink');
+          const sInput = document.getElementById('streamLink');
+          const dInput = document.getElementById('dlLink');
 
           form.onsubmit = (e) => {
             e.preventDefault();
             const rawUrl = document.getElementById('mfUrl').value;
-            
-            // Encode URL to Base64 to hide it
             const encoded = btoa(rawUrl);
             const domain = window.location.origin;
-
-            // Construct two different paths
-            streamInput.value = domain + "/view/" + encoded;
-            dlInput.value = domain + "/down/" + encoded;
-
+            sInput.value = domain + "/view/" + encoded;
+            dInput.value = domain + "/down/" + encoded;
             resultArea.style.display = 'block';
           }
 
-          function copyToClipboard(elementId) {
-            const copyText = document.getElementById(elementId);
-            copyText.select();
-            copyText.setSelectionRange(0, 99999);
-            navigator.clipboard.writeText(copyText.value);
+          function copy(id) {
+            const el = document.getElementById(id);
+            el.select();
+            el.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(el.value);
           }
         </script>
       </body>
@@ -98,70 +83,87 @@ Deno.serve(async (req) => {
     return new Response(html, { headers: { "content-type": "text/html" } });
   }
 
-  // =================================================================
-  // 2. Backend Logic (Handle /view/ and /down/)
-  // =================================================================
+  // 2. Backend Logic with Caching
   try {
-    let mode = ""; // 'inline' or 'attachment'
+    let mode = ""; 
     let encodedUrl = "";
 
     if (path.startsWith("/view/")) {
-      mode = "inline"; // For Streaming
+      mode = "inline"; 
       encodedUrl = path.replace("/view/", "");
     } else if (path.startsWith("/down/")) {
-      mode = "attachment"; // For Downloading
+      mode = "attachment"; 
       encodedUrl = path.replace("/down/", "");
     } else {
       return new Response("Not Found", { status: 404 });
     }
 
-    // Decode the Base64 URL
-    const targetUrl = atob(encodedUrl);
+    const targetMediaFireUrl = atob(encodedUrl);
+    if (!targetMediaFireUrl.startsWith("http")) return new Response("Invalid URL", { status: 400 });
 
-    if (!targetUrl.startsWith("http")) {
-      return new Response("Invalid URL", { status: 400 });
+    // --- CACHING STRATEGY ---
+    // Step A: Check KV Database for existing Direct Link
+    let directLink = null;
+    const cacheKey = ["mf_link", targetMediaFireUrl];
+    const cachedEntry = await kv.get(cacheKey);
+
+    if (cachedEntry.value) {
+        // Cache Hit! Use the stored link.
+        directLink = cachedEntry.value;
+    } else {
+        // Cache Miss! Need to scrape MediaFire.
+        const mfRes = await fetch(targetMediaFireUrl, {
+            headers: { "User-Agent": "Mozilla/5.0" }
+        });
+        if (!mfRes.ok) return new Response("MediaFire Error", { status: 500 });
+
+        const html = await mfRes.text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const downloadButton = doc?.getElementById("downloadButton");
+        directLink = downloadButton?.getAttribute("href");
+
+        if (!directLink) return new Response("File missing or deleted", { status: 404 });
+
+        // Store in KV Cache (Expire in 1 hour to ensure freshness)
+        await kv.set(cacheKey, directLink, { expireIn: 3600 * 1000 });
     }
 
-    // Step A: Fetch MediaFire HTML
-    const mfRes = await fetch(targetUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
-    });
-
-    if (!mfRes.ok) return new Response("Error fetching MediaFire", { status: 500 });
-
-    const html = await mfRes.text();
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const downloadButton = doc?.getElementById("downloadButton");
-    const directLink = downloadButton?.getAttribute("href");
-
-    if (!directLink) return new Response("Direct link not found. File deleted?", { status: 404 });
-
-    // Step B: Handle Headers (Range & Disposition)
+    // --- STREAMING ---
     const requestHeaders = new Headers();
     const range = req.headers.get("range");
     if (range) requestHeaders.set("Range", range);
 
-    // Step C: Stream File
-    const fileRes = await fetch(directLink, {
-      headers: requestHeaders
-    });
+    // Fetch the actual file
+    let fileRes = await fetch(directLink, { headers: requestHeaders });
 
-    // Step D: Set Response Headers
+    // Retry Logic: If link expired (403/404), Scrape again instantly
+    if (fileRes.status >= 400) {
+        const mfResRetry = await fetch(targetMediaFireUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+        const htmlRetry = await mfResRetry.text();
+        const docRetry = new DOMParser().parseFromString(htmlRetry, "text/html");
+        directLink = docRetry?.getElementById("downloadButton")?.getAttribute("href");
+        
+        if (directLink) {
+            await kv.set(cacheKey, directLink, { expireIn: 3600 * 1000 });
+            fileRes = await fetch(directLink, { headers: requestHeaders });
+        } else {
+             return new Response("Link expired and cannot refresh", { status: 410 });
+        }
+    }
+
+    // Prepare Headers
     const responseHeaders = new Headers(fileRes.headers);
     
     // Get Filename
-    let filename = "file.bin";
+    let filename = "video.mp4";
     const disp = fileRes.headers.get("content-disposition");
     if (disp && disp.includes("filename=")) {
         filename = disp.split("filename=")[1].replace(/"/g, "");
     } else {
-        filename = targetUrl.split('/').pop() || "video.mp4";
+        filename = targetMediaFireUrl.split('/').pop() || "video.mp4";
     }
 
-    // Set Mode (Stream or Download) based on path
     responseHeaders.set("Content-Disposition", `${mode}; filename="${filename}"`);
-    
-    // CORS & Expose Headers (Critical for Player seeking)
     responseHeaders.set("Access-Control-Allow-Origin", "*");
     responseHeaders.set("Access-Control-Allow-Headers", "Range");
     responseHeaders.set("Access-Control-Expose-Headers", "Content-Range, Content-Length");
